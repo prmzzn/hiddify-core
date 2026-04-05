@@ -5,6 +5,7 @@ package hcore
 */
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -24,7 +25,9 @@ import (
 	"github.com/hiddify/hiddify-core/v2/db"
 	hcommon "github.com/hiddify/hiddify-core/v2/hcommon"
 	"github.com/hiddify/hiddify-core/v2/hello"
+	"github.com/hiddify/hiddify-core/v2/hcore/tunnelservice"
 	hutils "github.com/hiddify/hiddify-core/v2/hutils"
+	"github.com/hiddify/hiddify-core/v2/profile"
 	"github.com/sagernet/sing-box/experimental/libbox"
 	"github.com/sagernet/sing-box/log"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -240,6 +243,16 @@ func StartGrpcServerByMode(listenAddressG string, mode SetupMode) (*grpc.Server,
 	// Register your gRPC service here
 	RegisterCoreServer(grpcServer[mode], &CoreService{})
 	hello.RegisterHelloServer(grpcServer[mode], &hello.HelloService{})
+	profile.SetRunInstanceFunc(func(ctx context.Context, hiddifySettings *config.HiddifyOptions) (profile.RunInstanceResult, error) {
+		return RunInstance(ctx, hiddifySettings, nil)
+	})
+	profile.SetParseContentFunc(func(ctx context.Context, content string) error {
+		_, err := Parse(ctx, &ParseRequest{Content: content})
+		return err
+	})
+	profile.RegisterProfileServiceServer(grpcServer[mode], &profile.ProfileRepositoryServer{})
+	tunnelservice.SetNewServiceFunc(NewService)
+	tunnelservice.RegisterTunnelServiceServer(grpcServer[mode], &tunnelservice.TunnelService{})
 	// Listen on the provided address
 	lis, err := net.Listen("tcp", listenAddressG)
 	if err != nil {

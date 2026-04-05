@@ -10,9 +10,43 @@ import (
 	"github.com/hiddify/hiddify-core/v2/db"
 	"github.com/hiddify/hiddify-core/v2/hcommon"
 	"github.com/hiddify/hiddify-core/v2/hcommon/request"
-	hcore "github.com/hiddify/hiddify-core/v2/hcore"
-	"github.com/sagernet/sing-box/option"
 )
+
+// RunInstanceFunc is a function type that starts a temporary hcore instance for
+// network operations (e.g., downloading profiles through a proxy). It is
+// injected at startup to break the import cycle between the profile and hcore
+// packages.
+//
+// The returned object must expose a ListenPort field (uint16) and a
+// PingCloudflare() method; we model this with the RunInstanceResult interface.
+type RunInstanceResult interface {
+	PingCloudflare() (time.Duration, error)
+	GetListenPort() uint16
+}
+
+// ParseContentFunc is a function type that validates raw sing-box / Hiddify
+// profile content. It returns an error if the content is invalid.
+type ParseContentFunc func(ctx context.Context, content string) error
+
+var (
+	// runInstanceFn is the injected RunInstance implementation.
+	runInstanceFn func(ctx context.Context, hiddifySettings *config.HiddifyOptions) (RunInstanceResult, error)
+
+	// parseContentFn is the injected Parse implementation.
+	parseContentFn ParseContentFunc
+)
+
+// SetRunInstanceFunc sets the factory function used by the profile package to
+// start temporary hcore instances. Must be called before AddByUrl / UpdateContent.
+func SetRunInstanceFunc(fn func(ctx context.Context, hiddifySettings *config.HiddifyOptions) (RunInstanceResult, error)) {
+	runInstanceFn = fn
+}
+
+// SetParseContentFunc sets the function used by the profile package to validate
+// profile content. Must be called before AddByContent / UpdateContent.
+func SetParseContentFunc(fn ParseContentFunc) {
+	parseContentFn = fn
+}
 
 const (
 	profilesDirName = "data/profiles"
@@ -116,7 +150,7 @@ func (s *ProfileRepositoryServer) SetActiveProfile(ctx context.Context, req *Pro
 	return &hcommon.Response{Code: hcommon.ResponseCode_OK}, nil
 }
 
-func (s *ProfileRepositoryServer) GetProfiles(ctx context.Context, req *hcommon.Empty) (*MultiProfilesResponse, error) {
+func (s *ProfileRepositoryServer) GetAllProfiles(ctx context.Context, req *hcommon.Empty) (*MultiProfilesResponse, error) {
 	profiles, err := GetAll()
 	if err != nil {
 		return &MultiProfilesResponse{ResponseCode: hcommon.ResponseCode_FAILED, Message: err.Error()}, fmt.Errorf("error fetching profiles: %v", err)
@@ -124,12 +158,12 @@ func (s *ProfileRepositoryServer) GetProfiles(ctx context.Context, req *hcommon.
 	return &MultiProfilesResponse{Profiles: profiles}, nil
 }
 
-func (s *ProfileRepositoryServer) UpdateProfile(ctx context.Context, req *ProfileEntity) (*hcommon.Response, error) {
+func (s *ProfileRepositoryServer) UpdateProfile(ctx context.Context, req *ProfileEntity) (*ProfileResponse, error) {
 	err := UpdateProfile(req)
 	if err != nil {
-		return &hcommon.Response{Message: err.Error(), Code: hcommon.ResponseCode_FAILED}, fmt.Errorf("error updating profile: %v", err)
+		return &ProfileResponse{ResponseCode: hcommon.ResponseCode_FAILED, Message: err.Error()}, fmt.Errorf("error updating profile: %v", err)
 	}
-	return &hcommon.Response{Code: hcommon.ResponseCode_OK}, nil
+	return &ProfileResponse{ResponseCode: hcommon.ResponseCode_OK, Profile: req}, nil
 }
 
 func GetAll() ([]*ProfileEntity, error) {
@@ -256,7 +290,10 @@ func downloadProfileContent(ctx context.Context, url string) (*request.Response,
 			Timeout: 5 * time.Second,
 		})
 		if resp == nil {
-			instance, err1 := hcore.RunInstance(ctx, config.DefaultHiddifyOptions(), &option.Options{})
+			if runInstanceFn == nil {
+				return nil, fmt.Errorf("%v, no runInstanceFn registered", err)
+			}
+			instance, err1 := runInstanceFn(ctx, config.DefaultHiddifyOptions())
 			if err1 != nil {
 				return nil, fmt.Errorf("%v,error running instance: %v", err, err1)
 			}
@@ -265,7 +302,7 @@ func downloadProfileContent(ctx context.Context, url string) (*request.Response,
 				Url:       url,
 				Method:    request.GET,
 				Timeout:   5 * time.Second,
-				SocksPort: instance.ListenPort,
+				SocksPort: instance.GetListenPort(),
 			})
 			if err1 != nil {
 				err = fmt.Errorf("%v, Fragment: %v", err, err1)
@@ -293,11 +330,10 @@ func UpdateContent(ctx context.Context, profileId, content string) error {
 		}
 	}
 
-	_, err := hcore.Parse(ctx, &hcore.ParseRequest{
-		Content: content,
-	})
-	if err != nil {
-		return err
+	if parseContentFn != nil {
+		if err := parseContentFn(ctx, content); err != nil {
+			return err
+		}
 	}
 
 	return os.WriteFile(profilesDirName+"/"+profileId+".info", []byte(content), 0o644)

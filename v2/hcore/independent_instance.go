@@ -76,6 +76,12 @@ func (s *HiddifyInstance) Close() error {
 	return s.StartedService.CloseService()
 }
 
+// GetListenPort returns the socks/mixed listen port of this instance.
+// It satisfies the profile.RunInstanceResult interface.
+func (s *HiddifyInstance) GetListenPort() uint16 {
+	return s.ListenPort
+}
+
 func (s *HiddifyInstance) GetContent(url string) (string, error) {
 	return s.ContentFromURL("GET", url, 10*time.Second)
 }

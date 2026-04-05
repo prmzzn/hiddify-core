@@ -11,8 +11,20 @@ import (
 	"github.com/sagernet/sing-box/option"
 
 	hcommon "github.com/hiddify/hiddify-core/v2/hcommon"
-	"github.com/hiddify/hiddify-core/v2/hcore"
 )
+
+// NewServiceFunc is a function type matching the hcore.NewService signature.
+// It is injected at startup to avoid a circular import between tunnelservice and hcore.
+type NewServiceFunc func(ctx context.Context, options option.Options) (*daemon.StartedService, error)
+
+// newServiceFn holds the injected NewService implementation.
+var newServiceFn NewServiceFunc
+
+// SetNewServiceFunc sets the factory function used by TunnelService to create
+// a sing-box service. This must be called before the first Start RPC.
+func SetNewServiceFunc(fn NewServiceFunc) {
+	newServiceFn = fn
+}
 
 type TunnelService struct {
 	UnimplementedTunnelServiceServer
@@ -25,7 +37,10 @@ func (s *TunnelService) Start(ctx context.Context, in *TunnelStartRequest) (*Tun
 	}
 	option := makeTunnelConfig(in)
 
-	box, err := hcore.NewService(ctx, option)
+	if newServiceFn == nil {
+		return &TunnelResponse{Message: "tunnel service factory not initialized"}, nil
+	}
+	box, err := newServiceFn(ctx, option)
 	s.box = box
 	if err != nil {
 		return &TunnelResponse{
