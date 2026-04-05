@@ -2,6 +2,7 @@ package tunnelservice
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"os"
 	"time"
@@ -22,6 +23,7 @@ var newServiceFn NewServiceFunc
 
 // SetNewServiceFunc sets the factory function used by TunnelService to create
 // a sing-box service. This must be called before the first Start RPC.
+// It is not thread-safe and must be called before Serve.
 func SetNewServiceFunc(fn NewServiceFunc) {
 	newServiceFn = fn
 }
@@ -38,7 +40,7 @@ func (s *TunnelService) Start(ctx context.Context, in *TunnelStartRequest) (*Tun
 	option := makeTunnelConfig(in)
 
 	if newServiceFn == nil {
-		return &TunnelResponse{Message: "tunnel service factory not initialized"}, nil
+		return nil, fmt.Errorf("tunnel service factory not initialized")
 	}
 	box, err := newServiceFn(ctx, option)
 	s.box = box

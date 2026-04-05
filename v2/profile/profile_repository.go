@@ -38,12 +38,14 @@ var (
 
 // SetRunInstanceFunc sets the factory function used by the profile package to
 // start temporary hcore instances. Must be called before AddByUrl / UpdateContent.
+// It is not thread-safe and must be called before Serve.
 func SetRunInstanceFunc(fn func(ctx context.Context, hiddifySettings *config.HiddifyOptions) (RunInstanceResult, error)) {
 	runInstanceFn = fn
 }
 
 // SetParseContentFunc sets the function used by the profile package to validate
 // profile content. Must be called before AddByContent / UpdateContent.
+// It is not thread-safe and must be called before Serve.
 func SetParseContentFunc(fn ParseContentFunc) {
 	parseContentFn = fn
 }
@@ -330,10 +332,11 @@ func UpdateContent(ctx context.Context, profileId, content string) error {
 		}
 	}
 
-	if parseContentFn != nil {
-		if err := parseContentFn(ctx, content); err != nil {
-			return err
-		}
+	if parseContentFn == nil {
+		return fmt.Errorf("parse content function not initialized")
+	}
+	if err := parseContentFn(ctx, content); err != nil {
+		return err
 	}
 
 	return os.WriteFile(profilesDirName+"/"+profileId+".info", []byte(content), 0o644)
