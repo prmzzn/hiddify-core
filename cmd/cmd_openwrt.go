@@ -20,20 +20,20 @@ var commandOpenWrt = &cobra.Command{
 		webRoot, _ := cmd.Flags().GetString("web-root")
 		disableAuth, _ := cmd.Flags().GetBool("disable-auth")
 
+		grpcAddr := "127.0.0.1:17078"
 		err := hcore.Setup(&hcore.SetupRequest{
 			BasePath:   ".",
 			WorkingDir: ".",
 			TempDir:    os.TempDir(),
+			Listen:     grpcAddr,
 			Mode:       hcore.SetupMode_GRPC_NORMAL_INSECURE,
 		}, nil)
 		if err != nil {
 			log.Fatalf("Setup failed: %v", err)
 		}
-
-		grpcAddr := "127.0.0.1:17078"
-		grpcServer, err := hcore.StartGrpcServerByMode(grpcAddr, hcore.SetupMode_GRPC_NORMAL_INSECURE)
-		if err != nil {
-			log.Fatalf("gRPC server failed: %v", err)
+		grpcServer := hcore.GetGrpcServer(hcore.SetupMode_GRPC_NORMAL_INSECURE)
+		if grpcServer == nil {
+			log.Fatalf("gRPC server not started")
 		}
 		log.Printf("gRPC server on %s", grpcAddr)
 

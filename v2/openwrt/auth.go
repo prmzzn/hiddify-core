@@ -80,7 +80,7 @@ func ValidateRpcdSession(token string) bool {
 // or environments where a real validator has not been wired up yet.
 func RpcdAuthMiddleware(next http.Handler, validate SessionValidator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		if !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/auth/check" {
 			next.ServeHTTP(w, r)
 			return
 		}

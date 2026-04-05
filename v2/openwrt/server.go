@@ -68,9 +68,14 @@ func StartWebServer(cfg ServerConfig) error {
 			wrappedGrpc.ServeHTTP(w, r)
 			return
 		}
+		// Auth check endpoint — bypasses auth middleware
 		if r.URL.Path == "/api/auth/check" {
+			if cfg.Validate == nil {
+				http.Error(w, `{"authenticated":false}`, http.StatusUnauthorized)
+				return
+			}
 			token := ExtractSessionToken(r)
-			if token == "" || (cfg.Validate != nil && !cfg.Validate(token)) {
+			if !cfg.Validate(token) {
 				http.Error(w, `{"authenticated":false}`, http.StatusUnauthorized)
 				return
 			}

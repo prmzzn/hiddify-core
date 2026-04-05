@@ -277,6 +277,13 @@ func StartGrpcServerByMode(listenAddressG string, mode SetupMode) (*grpc.Server,
 	return grpcServer[mode], nil
 }
 
+// GetGrpcServer returns the gRPC server for the given mode, or nil if not started.
+func GetGrpcServer(mode SetupMode) *grpc.Server {
+	mu.Lock()
+	defer mu.Unlock()
+	return grpcServer[mode]
+}
+
 // GetGrpcServerPublicKey returns the gRPC server's public key.
 func GetGrpcServerPublicKey() []byte {
 	return certpair.Certificate
